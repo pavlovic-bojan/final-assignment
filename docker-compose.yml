@@ -1,0 +1,11 @@
+services:
+  playwright:
+    build: .
+    volumes:
+      - ./test-results:/app/test-results
+      - ./allure-results:/app/allure-results
+      - ./allure-report:/app/allure-report
+      - ./test-data:/app/test-data
+    environment:
+      - CI=true
+    ipc: host

@@ -1,0 +1,104 @@
+name: 🎭 Playwright E2E Tests
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'tests/**'
+      - 'pages/**'
+      - 'fixtures/**'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - '.github/workflows/playwright.yml'
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: ☕ Setup Java for Allure
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🎭 Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: 🧪 Run Playwright tests
+        run: npm test
+        env:
+          CI: true
+
+      - name: 📊 Generate Allure report
+        if: always()
+        run: |
+          if [ -d "allure-results" ] && [ "$(ls -A allure-results 2>/dev/null)" ]; then
+            npm run allure:generate
+            echo "✅ Allure report generated"
+          else
+            echo "⚠️ No allure-results found, creating placeholder"
+            mkdir -p allure-report
+            echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>No Test Results</title></head><body><h1>No test results</h1><p>Tests did not produce Allure results.</p></body></html>' > allure-report/index.html
+          fi
+
+      - name: 📤 Upload Allure report as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: 📄 Prepare GitHub Pages content
+        if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: |
+          mkdir -p gh-pages-content/allure
+          if [ -d "allure-report" ] && [ "$(ls -A allure-report 2>/dev/null)" ]; then
+            cp -r allure-report/* gh-pages-content/allure/
+          fi
+          cp .github/pages-index.html gh-pages-content/index.html
+
+      - name: 🚀 Deploy to GitHub Pages
+        if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh-pages-content
+          publish_branch: gh-pages
+          force_orphan: true
+
+      - name: 📢 Report URL
+        if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: |
+          echo "📊 Allure report deployed to GitHub Pages"
+          echo "🔗 https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+          echo "📈 Allure: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/allure/"
+
+      - name: 📎 Upload trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
